@@ -1,7 +1,8 @@
 #ifndef ERROR_H
 #define ERROR_H
 
-extern int errno;
+/* extern int errno; */
+#include <errno.h>
 
 extern int error_intr;
 extern int error_nomem;
@@ -16,6 +17,7 @@ extern int error_again;
 extern int error_pipe;
 extern int error_perm;
 extern int error_acces;
+extern int error_dquot;
 
 extern char *error_str();
 extern int error_temp();

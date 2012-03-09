@@ -20,7 +20,11 @@ other hostname-related control files.
 
 Comments are allowed
 in
+.IR badhelo ,
 .IR badmailfrom ,
+.IR badmailfromnorelay ,
+.IR badrcpto ,
+.IR badrcptonorelay ,
 .IR locals ,
 .IR percenthack ,
 .IR qmqpservers ,
@@ -40,7 +44,11 @@ See the corresponding man pages for further details.
 .ta 5c 10c
 control	default	used by
 
+.I badhelo	\fR(none)	\fRqmail-smtpd
 .I badmailfrom	\fR(none)	\fRqmail-smtpd
+.I badmailfromnorelay	\fR(none)	\fRqmail-smtpd
+.I badrcptto	\fR(none)	\fRqmail-smtpd
+.I badrcpttonorelay	\fR(none)	\fRqmail-smtpd
 .I bouncefrom	\fRMAILER-DAEMON	\fRqmail-send
 .I bouncehost	\fIme	\fRqmail-send
 .I concurrencylocal	\fR10	\fRqmail-send
@@ -55,6 +63,7 @@ control	default	used by
 .I idhost	\fIme	\fRqmail-inject
 .I localiphost	\fIme	\fRqmail-smtpd
 .I locals	\fIme	\fRqmail-send
+.I mfcheck	\fR0	\fRqmail-smtpd
 .I morercpthosts	\fR(none)	\fRqmail-smtpd
 .I percenthack	\fR(none)	\fRqmail-send
 .I plusdomain	\fIme	\fRqmail-inject
@@ -63,6 +72,11 @@ control	default	used by
 .I rcpthosts	\fR(none)	\fRqmail-smtpd
 .I smtpgreeting	\fIme	\fRqmail-smtpd
 .I smtproutes	\fR(none)	\fRqmail-remote
+.I spfbehavior	\fR0	\fRqmail-smtpd
+.I spfexp	\fR(default)	\fRqmail-smtpd
+.I spfguess	\fR(none)	\fRqmail-smtpd
+.I spfrules	\fR(none)	\fRqmail-smtpd
+.I taps		\fR(none)	\fRqmail-queue
 .I timeoutconnect	\fR60	\fRqmail-remote
 .I timeoutremote	\fR1200	\fRqmail-remote
 .I timeoutsmtpd	\fR1200	\fRqmail-smtpd
@@ -72,6 +86,7 @@ control	default	used by
 .SH "SEE ALSO"
 qmail-inject(8),
 qmail-qmqpc(8),
+qmail-queue(8),
 qmail-remote(8),
 qmail-send(8),
 qmail-showctl(8),

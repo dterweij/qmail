@@ -8,6 +8,7 @@ struct qmail {
   unsigned long pid;
   int fdm;
   int fde;
+  int fderr;
   substdio ss;
   char buf[1024];
 } ;

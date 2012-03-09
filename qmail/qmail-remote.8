@@ -127,8 +127,15 @@ refuses to run.
 .I smtproutes
 Artificial SMTP routes.
 Each route has the form
-.IR domain\fB:\fIrelay ,
-without any extra spaces.
+
+.EX
+   \fIdomain\fB:\fIrelay user pass
+.EE
+
+without any extra spaces between
+.I domain
+and
+.I relay.
 If
 .I domain
 matches
@@ -173,6 +180,35 @@ itself)
 is routed by its MX records;
 any other address is artificially routed to
 .BR heaven.af.mil .
+
+.I user
+and
+.I pass
+may be empty; if present they will be used as the userid and password 
+for an AUTH command when connecting to the remote SMTP server. Note that
+in order to be used, both
+.I user
+and
+.I pass
+must be present, and must be separated from the prior items on the 
+line by exactly one space. This means that
+.I user
+cannot contain any spaces, although
+.I pass
+may contain spaces, and in fact if any "extra" spaces are present at the 
+end of the line, they will be considered part of the password. (You have 
+been warned.)
+
+Note that
+.B qmail-remote
+will not send AUTH commands over a non-secured connection (i.e. if a 
+STARTTLS command has not been successfully sent.) This is done on 
+purpose, to prevent your server from sending a password across the 
+internet in clear text. If
+.I user
+starts with a "-" character, the "-" will be removed and this security 
+check will be bypassed. Think of this as qmail-remote's version of the
+ALLOW_INSECURE_AUTH variable used by qmail-smtpd.
 
 The
 .B qmail

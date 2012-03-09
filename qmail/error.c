@@ -93,3 +93,10 @@ EACCES;
 #else
 -13;
 #endif
+
+int error_dquot =
+#ifdef EDQUOT
+EDQUOT;
+#else
+-14;
+#endif

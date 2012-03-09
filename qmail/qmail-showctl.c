@@ -15,6 +15,7 @@
 #include "auto_patrn.h"
 #include "auto_spawn.h"
 #include "auto_split.h"
+#include "spf.h"
 
 stralloc me = {0};
 int meok;
@@ -214,7 +215,12 @@ void main()
     _exit(111);
   }
 
-  do_lst("badmailfrom","Any MAIL FROM is allowed.",""," not accepted in MAIL FROM.");
+  do_lst("badhelo","Any HELO host name is allowed.",""," HELO host name denied if it matches this pattern.");
+  do_lst("badmailfrom","Any MAIL FROM is allowed.",""," MAIL FROM denied if it matches this pattern.");
+  do_lst("badmailfromnorelay","Any MAIL FROM is allowed.",""," MAIL FROM denied if it matches this pattern and RELAYCLIENT is not set.");
+  do_lst("badrcptto","No RCPT TO are specifically denied.",""," RCPT TO denied if it matches this pattern.");
+  do_lst("badrcpttonorelay","No RCPT TO are specifically denied.","",
+    " RCPT TO denied if it matches this pattern, RELAYCLIENT is not set, and client has not done a successful AUTH.");
   do_str("bouncefrom",0,"MAILER-DAEMON","Bounce user name is ");
   do_str("bouncehost",1,"bouncehost","Bounce host name is ");
   do_int("concurrencylocal","10","Local concurrency is ","");
@@ -257,6 +263,10 @@ void main()
 
   do_str("smtpgreeting",1,"smtpgreeting","SMTP greeting: 220 ");
   do_lst("smtproutes","No artificial SMTP routes.","SMTP route: ","");
+  do_int("spfbehavior","0","The SPF behavior is ","");
+  do_str("spfexp",0,SPF_DEFEXP,"The SPF default explanation is: 550 ");
+  do_str("spfguess",0,"","The guess SPF rules are: ");
+  do_str("spfrules",0,"","The local SPF rules are: ");
   do_int("timeoutconnect","60","SMTP client connection timeout is "," seconds");
   do_int("timeoutremote","1200","SMTP client data timeout is "," seconds");
   do_int("timeoutsmtpd","1200","SMTP server data timeout is "," seconds");
@@ -267,7 +277,11 @@ void main()
     if (str_equal(d->d_name,"..")) continue;
     if (str_equal(d->d_name,"bouncefrom")) continue;
     if (str_equal(d->d_name,"bouncehost")) continue;
+    if (str_equal(d->d_name,"badhelo")) continue;
     if (str_equal(d->d_name,"badmailfrom")) continue;
+    if (str_equal(d->d_name,"badmailfromnorelay")) continue;
+    if (str_equal(d->d_name,"badrcptto")) continue;
+    if (str_equal(d->d_name,"badrcpttonorelay")) continue;
     if (str_equal(d->d_name,"bouncefrom")) continue;
     if (str_equal(d->d_name,"bouncehost")) continue;
     if (str_equal(d->d_name,"concurrencylocal")) continue;
@@ -292,6 +306,10 @@ void main()
     if (str_equal(d->d_name,"rcpthosts")) continue;
     if (str_equal(d->d_name,"smtpgreeting")) continue;
     if (str_equal(d->d_name,"smtproutes")) continue;
+    if (str_equal(d->d_name,"spfbehavior")) continue;
+    if (str_equal(d->d_name,"spfexp")) continue;
+    if (str_equal(d->d_name,"spfguess")) continue;
+    if (str_equal(d->d_name,"spfrules")) continue;
     if (str_equal(d->d_name,"timeoutconnect")) continue;
     if (str_equal(d->d_name,"timeoutremote")) continue;
     if (str_equal(d->d_name,"timeoutsmtpd")) continue;

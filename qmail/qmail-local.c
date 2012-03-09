@@ -41,6 +41,9 @@ void temp_slowlock()
 void temp_qmail(fn) char *fn;
 { strerr_die5x(111,"Unable to open ",fn,": ",error_str(errno),". (#4.3.0)"); }
 
+char *overquota = 
+	"Recipient's mailbox is full, message returned to sender. (#5.2.2)";
+
 int flagdoit;
 int flag99;
 
@@ -110,7 +113,12 @@ char *dir;
 
  alarm(86400);
  fd = open_excl(fntmptph);
- if (fd == -1) _exit(1);
+ if (fd == -1) {
+   if (errno == error_dquot)
+     _exit(5);
+   else
+     _exit(1);
+ }
 
  substdio_fdbuf(&ss,read,0,buf,sizeof(buf));
  substdio_fdbuf(&ssout,write,fd,outbuf,sizeof(outbuf));
@@ -131,7 +139,12 @@ char *dir;
    /* if it was error_exist, almost certainly successful; i hate NFS */
  tryunlinktmp(); _exit(0);
 
- fail: tryunlinktmp(); _exit(1);
+ fail: 
+   if (errno == error_dquot) {
+     tryunlinktmp(); _exit(5);
+   } else {
+     tryunlinktmp(); _exit(1);
+   }
 }
 
 /* end child process */
@@ -162,6 +175,7 @@ char *fn;
    case 2: strerr_die1x(111,"Unable to chdir to maildir. (#4.2.1)");
    case 3: strerr_die1x(111,"Timeout on maildir delivery. (#4.3.0)");
    case 4: strerr_die1x(111,"Unable to read message. (#4.3.0)");
+   case 5: strerr_die1x(100,overquota);
    default: strerr_die1x(111,"Temporary error on maildir delivery. (#4.3.0)");
   }
 }
@@ -221,7 +235,12 @@ char *fn;
  return;
 
  writeerrs:
- strerr_warn5("Unable to write ",fn,": ",error_str(errno),". (#4.3.0)",0);
+ if (errno == error_dquot) { 
+   if (flaglocked) seek_trunc(fd,pos);
+   close(fd);
+   strerr_die1x(100,overquota);
+ } else
+   strerr_warn5("Unable to write ",fn,": ",error_str(errno),". (#4.3.0)",0);
  if (flaglocked) seek_trunc(fd,pos);
  close(fd);
  _exit(111);
@@ -645,7 +664,7 @@ char **argv;
     {
      cmds.s[j] = 0;
      k = j;
-     while ((k > i) && (cmds.s[k - 1] == ' ') || (cmds.s[k - 1] == '\t'))
+     while ((k > i) && ((cmds.s[k - 1] == ' ') || (cmds.s[k - 1] == '\t')))
        cmds.s[--k] = 0;
      switch(cmds.s[i])
       {

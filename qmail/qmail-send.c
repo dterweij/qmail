@@ -44,6 +44,8 @@
 
 int lifetime = 604800;
 
+int bouncemaxbytes = 0;
+
 stralloc percenthack = {0};
 struct constmap mappercenthack;
 stralloc locals = {0};
@@ -261,6 +263,8 @@ char *recip;
  if (comm_buf[c].s && comm_buf[c].len) return;
  while (!stralloc_copys(&comm_buf[c],"")) nomem();
  ch = delnum;
+ while (!stralloc_append(&comm_buf[c],&ch)) nomem();
+ ch = delnum >> 8;
  while (!stralloc_append(&comm_buf[c],&ch)) nomem();
  fnmake_split(id);
  while (!stralloc_cats(&comm_buf[c],fn.s)) nomem();
@@ -721,9 +725,26 @@ I tried to deliver a bounce message to this address, but the bounce bounced!\n\
      qmail_fail(&qqt);
    else
     {
-     substdio_fdbuf(&ssread,read,fd,inbuf,sizeof(inbuf));
-     while ((r = substdio_get(&ssread,buf,sizeof(buf))) > 0)
-       qmail_put(&qqt,buf,r);
+     if(bouncemaxbytes)
+     {
+       int bytestogo = bouncemaxbytes;
+       int bytestoget = (bytestogo < sizeof buf) ? bytestogo : sizeof buf;
+       substdio_fdbuf(&ssread,read,fd,inbuf,sizeof(inbuf));
+       while (bytestoget > 0 && (r = substdio_get(&ssread,buf,bytestoget)) > 0) {
+         qmail_put(&qqt,buf,r);
+         bytestogo -= bytestoget;
+         bytestoget = (bytestogo < sizeof buf) ? bytestogo : sizeof buf;
+       }
+       if (r > 0) {
+         qmail_puts(&qqt,"\n\n--- End of message stripped.\n");
+       }
+     }
+     else
+     {
+       substdio_fdbuf(&ssread,read,fd,inbuf,sizeof(inbuf));
+       while ((r = substdio_get(&ssread,buf,sizeof(buf))) > 0)
+         qmail_put(&qqt,buf,r);
+     }
      close(fd);
      if (r == -1)
        qmail_fail(&qqt);
@@ -906,41 +927,42 @@ int c;
      dline[c].len = REPORTMAX;
      /* qmail-lspawn and qmail-rspawn are responsible for keeping it short */
      /* but from a security point of view, we don't trust rspawn */
-   if (!ch && (dline[c].len > 1))
+   if (!ch && (dline[c].len > 2))
     {
      delnum = (unsigned int) (unsigned char) dline[c].s[0];
+     delnum += (unsigned int) ((unsigned int) dline[c].s[1]) << 8;
      if ((delnum < 0) || (delnum >= concurrency[c]) || !d[c][delnum].used)
        log1("warning: internal error: delivery report out of range\n");
      else
       {
        strnum3[fmt_ulong(strnum3,d[c][delnum].delid)] = 0;
-       if (dline[c].s[1] == 'Z')
+       if (dline[c].s[2] == 'Z')
 	 if (jo[d[c][delnum].j].flagdying)
 	  {
-	   dline[c].s[1] = 'D';
+	   dline[c].s[2] = 'D';
 	   --dline[c].len;
 	   while (!stralloc_cats(&dline[c],"I'm not going to try again; this message has been in the queue too long.\n")) nomem();
 	   while (!stralloc_0(&dline[c])) nomem();
 	  }
-       switch(dline[c].s[1])
+       switch(dline[c].s[2])
 	{
 	 case 'K':
 	   log3("delivery ",strnum3,": success: ");
-	   logsafe(dline[c].s + 2);
+	   logsafe(dline[c].s + 3);
 	   log1("\n");
 	   markdone(c,jo[d[c][delnum].j].id,d[c][delnum].mpos);
 	   --jo[d[c][delnum].j].numtodo;
 	   break;
 	 case 'Z':
 	   log3("delivery ",strnum3,": deferral: ");
-	   logsafe(dline[c].s + 2);
+	   logsafe(dline[c].s + 3);
 	   log1("\n");
 	   break;
 	 case 'D':
 	   log3("delivery ",strnum3,": failure: ");
-	   logsafe(dline[c].s + 2);
+	   logsafe(dline[c].s + 3);
 	   log1("\n");
-	   addbounce(jo[d[c][delnum].j].id,d[c][delnum].recip.s,dline[c].s + 2);
+	   addbounce(jo[d[c][delnum].j].id,d[c][delnum].recip.s,dline[c].s + 3);
 	   markdone(c,jo[d[c][delnum].j].id,d[c][delnum].mpos);
 	   --jo[d[c][delnum].j].numtodo;
 	   break;
@@ -1215,6 +1237,7 @@ void pass_do()
 
 /* this file is too long ---------------------------------------------- TODO */
 
+#ifndef EXTERNAL_TODO
 datetime_sec nexttodorun;
 DIR *tododir; /* if 0, have to opendir again */
 stralloc todoline = {0};
@@ -1438,10 +1461,148 @@ fd_set *rfds;
    if (fdchan[c] != -1) close(fdchan[c]);
 }
 
+#endif
+
+/* this file is too long ------------------------------------- EXTERNAL TODO */
+
+#ifdef EXTERNAL_TODO
+stralloc todoline = {0};
+char todobuf[2048];
+int todofdin;
+int todofdout;
+int flagtodoalive;
+
+void tododied() { log1("alert: oh no! lost qmail-todo connection! dying...\n");
+ flagexitasap = 1; flagtodoalive = 0; }
+
+void todo_init()
+{
+  todofdout = 7;
+  todofdin = 8;
+  flagtodoalive = 1;
+  /* sync with external todo */
+  if (write(todofdout, "S", 1) != 1) tododied();
+  
+  return;
+}
+
+void todo_selprep(nfds,rfds,wakeup)
+int *nfds;
+fd_set *rfds;
+datetime_sec *wakeup;
+{
+  if (flagexitasap) {
+    if (flagtodoalive) {
+      write(todofdout, "X", 1);
+    }
+  }
+  if (flagtodoalive) {
+    FD_SET(todofdin,rfds);
+    if (*nfds <= todofdin)
+      *nfds = todofdin + 1;
+  }
+}
+
+void todo_del(char* s)
+{
+ int flagchan[CHANNELS];
+ struct prioq_elt pe;
+ unsigned long id;
+ unsigned int len;
+ int c;
+
+ for (c = 0;c < CHANNELS;++c) flagchan[c] = 0;
+ switch(*s++) {
+  case 'L':
+    flagchan[0] = 1;
+    break;
+  case 'R':
+    flagchan[1] = 1;
+    break;
+  case 'B':
+    flagchan[0] = 1;
+    flagchan[1] = 1;
+    break;
+  case 'X':
+    break;
+  default:
+    log1("warning: qmail-send unable to understand qmail-todo\n");
+    return;
+ }
+ 
+ len = scan_ulong(s,&id);
+ if (!len || s[len]) {
+  log1("warning: qmail-send unable to understand qmail-todo\n");
+  return;
+ }
+
+ pe.id = id; pe.dt = now();
+ for (c = 0;c < CHANNELS;++c)
+   if (flagchan[c])
+     while (!prioq_insert(&pqchan[c],&pe)) nomem();
+
+ for (c = 0;c < CHANNELS;++c) if (flagchan[c]) break;
+ if (c == CHANNELS)
+   while (!prioq_insert(&pqdone,&pe)) nomem();
+
+ return;
+}
+
+void todo_do(rfds)
+fd_set *rfds;
+{
+  int r;
+  char ch;
+  int i;
+  
+  if (!flagtodoalive) return;
+  if (!FD_ISSET(todofdin,rfds)) return;
+
+  r = read(todofdin,todobuf,sizeof(todobuf));
+  if (r == -1) return;
+  if (r == 0) {
+    if (flagexitasap)
+      flagtodoalive = 0;
+    else
+      tododied();
+    return;
+  }
+  for (i = 0;i < r;++i) {
+    ch = todobuf[i];
+    while (!stralloc_append(&todoline,&ch)) nomem();
+    if (todoline.len > REPORTMAX)
+      todoline.len = REPORTMAX;
+      /* qmail-todo is responsible for keeping it short */
+    if (!ch && (todoline.len > 1)) {
+      switch (todoline.s[0]) {
+	case 'D':
+	  if (flagexitasap) break;
+	  todo_del(todoline.s + 1);
+	  break;
+	case 'L':
+	  log1(todoline.s + 1);
+	  break;
+	case 'X':
+	  if (flagexitasap)
+	    flagtodoalive = 0;
+	  else
+	    tododied();
+	  break;
+	default:
+	  log1("warning: qmail-send unable to understand qmail-todo: report mangled\n");
+	  break;
+      }
+      todoline.len = 0;
+    }
+  }
+}
+
+#endif
 
 /* this file is too long ---------------------------------------------- MAIN */
 
 int getcontrols() { if (control_init() == -1) return 0;
+ if (control_readint(&bouncemaxbytes,"control/bouncemaxbytes") == -1) return 0;   
  if (control_readint(&lifetime,"control/queuelifetime") == -1) return 0;
  if (control_readint(&concurrency[0],"control/concurrencylocal") == -1) return 0;
  if (control_readint(&concurrency[1],"control/concurrencyremote") == -1) return 0;
@@ -1504,6 +1665,9 @@ void reread()
    log1("alert: unable to reread controls: unable to switch to home directory\n");
    return;
   }
+#ifdef EXTERNAL_TODO
+ write(todofdout, "H", 1);
+#endif
  regetcontrols();
  while (chdir("queue") == -1)
   {
@@ -1544,7 +1708,7 @@ void main()
  numjobs = 0;
  for (c = 0;c < CHANNELS;++c)
   {
-   char ch;
+   char ch, ch1;
    int u;
    int r;
    do
@@ -1552,7 +1716,13 @@ void main()
    while ((r == -1) && (errno == error_intr));
    if (r < 1)
     { log1("alert: cannot start: hath the daemon spawn no fire?\n"); _exit(111); }
+   do
+     r = read(chanfdin[c],&ch1,1);
+   while ((r == -1) && (errno == error_intr));
+   if (r < 1)
+    { log1("alert: cannot start: hath the daemon spawn no fire?\n"); _exit(111); }
    u = (unsigned int) (unsigned char) ch;
+   u += (unsigned int) ((unsigned char) ch1) << 8;
    if (concurrency[c] > u) concurrency[c] = u;
    numjobs += concurrency[c];
   }
@@ -1568,8 +1738,12 @@ void main()
  todo_init();
  cleanup_init();
 
+#ifdef EXTERNAL_TODO
+ while (!flagexitasap || !del_canexit() || flagtodoalive)
+#else
  while (!flagexitasap || !del_canexit())
-  {
+#endif
+ {
    recent = now();
 
    if (flagrunasap) { flagrunasap = 0; pqrun(); }

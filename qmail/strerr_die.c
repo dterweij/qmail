@@ -3,8 +3,8 @@
 #include "exit.h"
 #include "strerr.h"
 
-void strerr_warn(x1,x2,x3,x4,x5,x6,se)
-char *x1; char *x2; char *x3; char *x4; char *x5; char *x6;
+void strerr_warn(x1,x2,x3,x4,x5,x6,x7,x8,x9,se)
+char *x1; char *x2; char *x3; char *x4; char *x5; char *x6; char *x7; char *x8; char *x9;
 struct strerr *se;
 {
   strerr_sysinit();
@@ -15,6 +15,9 @@ struct strerr *se;
   if (x4) substdio_puts(subfderr,x4);
   if (x5) substdio_puts(subfderr,x5);
   if (x6) substdio_puts(subfderr,x6);
+  if (x7) substdio_puts(subfderr,x7);
+  if (x8) substdio_puts(subfderr,x8);
+  if (x9) substdio_puts(subfderr,x9);
  
   while(se) {
     if (se->x) substdio_puts(subfderr,se->x);
@@ -27,11 +30,11 @@ struct strerr *se;
   substdio_flush(subfderr);
 }
 
-void strerr_die(e,x1,x2,x3,x4,x5,x6,se)
+void strerr_die(e,x1,x2,x3,x4,x5,x6,x7,x8,x9,se)
 int e;
-char *x1; char *x2; char *x3; char *x4; char *x5; char *x6;
+char *x1; char *x2; char *x3; char *x4; char *x5; char *x6; char *x7; char *x8; char *x9;
 struct strerr *se;
 {
-  strerr_warn(x1,x2,x3,x4,x5,x6,se);
+  strerr_warn(x1,x2,x3,x4,x5,x6,x7,x8,x9,se);
   _exit(e);
 }

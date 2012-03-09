@@ -1,3 +1,4 @@
+#include <sys/socket.h>
 #include "stralloc.h"
 #include "strsalloc.h"
 #include "alloc.h"
@@ -73,7 +74,7 @@ static stralloc errormsg = {0};
 static char *received;
 
 static int recursion;
-static struct ip_address ip;
+static struct ip_mx ipmx;
 
 static void hdr_pass() { received = "pass (%{xr}: %{xs} designates %{i} as permitted sender)"; };
 static void hdr_softfail() { received = "softfail (%{xr}: transitioning %{xs} does not designate %{i} as permitted sender)"; };
@@ -104,6 +105,23 @@ static int matchip(struct ip_address *net, int mask, struct ip_address *ip)
 	return 1;
 }
 
+#ifdef INET6
+static int matchip6(struct ip6_address *net, int mask, struct ip6_address *ip)
+{
+	int j;
+	int bytemask;
+
+	for (j = 0; j < 16 && mask > 0; ++j) {
+		if (mask > 8) bytemask = 8; else bytemask = mask;
+		mask -= bytemask;
+
+		if ((net->d[j] ^ ip->d[j]) & (0x100 - (1 << (8 - bytemask))))
+			return 0;
+	}
+	return 1;
+}
+#endif
+
 static int getipmask(char *mask, int ipv6) {
 	unsigned long r;
 	int pos;
@@ -116,6 +134,21 @@ static int getipmask(char *mask, int ipv6) {
 
 	return r;
 }
+
+#ifdef INET6
+static int getip6mask(char *mask, int ipv6) {
+	unsigned long r;
+	int pos;
+
+	if (!mask) return 128;
+
+	pos = scan_ulong(mask, &r);
+	if (!pos || (mask[pos] && !(mask[pos] == '/' && ipv6))) return -1;
+	if (r > 128) return -1;
+
+	return r;
+}
+#endif
 
 int spfget(stralloc *spf, stralloc *domain)
 {
@@ -220,7 +253,12 @@ int spfsubst(stralloc *expand, char *spec, char *domain)
 			break;
 		case 'i':
 			if (!stralloc_ready(&sa, IPFMT)) return 0;
-			sa.len = ip_fmt(sa.s, &ip);
+#ifdef INET6
+         if(ipmx.af==AF_INET6)
+            sa.len = ip6_fmt(sa.s, &ipmx.addr.ip6);
+         else
+#endif
+		  	   sa.len = ip_fmt(sa.s, &ipmx.addr.ip);
 			break;
 		case 't':
 			if (!stralloc_ready(&sa, FMT_ULONG)) return 0;
@@ -372,7 +410,11 @@ static int spf_a(char *spec, char *mask)
 {
 	stralloc sa = {0};
 	ipalloc ia = {0};
+#ifdef INET6
+   int ipmask = ipmx.af==AF_INET6 ? getip6mask(mask, 1) : getipmask(mask, 1);
+#else
 	int ipmask = getipmask(mask, 1);
+#endif
 	int r;
 	int j;
 
@@ -388,7 +430,12 @@ static int spf_a(char *spec, char *mask)
 		default:
 			r = SPF_NONE;
 			for(j = 0; j < ia.len; ++j)
-				if (matchip(&ia.ix[j].ip, ipmask, &ip)) {
+            if((ipmx.af==AF_INET && matchip(&ia.ix[j].addr.ip, ipmask, &ipmx.addr.ip))
+#ifdef INET6
+               ||
+               (ipmx.af==AF_INET6 && matchip6(&ia.ix[j].addr.ip6, ipmask, &ipmx.addr.ip6))
+#endif
+            ) {
 					r = SPF_OK;
 					break;
 				}
@@ -420,7 +467,12 @@ static int spf_mx(char *spec, char *mask)
 		default:
 			r = SPF_NONE;
 			for(j = 0; j < ia.len; ++j)
-				if (matchip(&ia.ix[j].ip, ipmask, &ip)) {
+            if((ipmx.af==AF_INET && matchip(&ia.ix[j].addr.ip, ipmask, &ipmx.addr.ip))
+#ifdef INET6
+               ||
+               (ipmx.af==AF_INET6 && matchip6(&ia.ix[j].addr.ip6, ipmask, &ipmx.addr.ip6))
+#endif
+            ) {
 					r = SPF_OK;
 					break;
 				}
@@ -459,7 +511,7 @@ static int spf_ptr(char *spec, char *mask)
 	if (!stralloc_readyplus(&ssa, 0)) return SPF_NOMEM;
 	if (!stralloc_readyplus(&ia, 0)) return SPF_NOMEM;
 
-	switch(dns_ptr(&ssa, &ip)) {
+	switch(dns_ptr(&ssa, &ipmx.addr.ip)) {
 		case DNS_MEM: return SPF_NOMEM;
 		case DNS_SOFT: hdr_dns(); r = SPF_ERROR; break;
 		case DNS_HARD: r = SPF_NONE; break;
@@ -472,7 +524,12 @@ static int spf_ptr(char *spec, char *mask)
 					case DNS_HARD: break;
 					default:
 						for(k = 0; k < ia.len; ++k)
-							if (matchip(&ia.ix[k].ip, 32, &ip)) {
+                     if((ipmx.af==AF_INET && matchip(&ia.ix[k].addr.ip, 32, &ipmx.addr.ip))
+#ifdef INET6
+                        ||
+                        (ipmx.af==AF_INET6 && matchip6(&ia.ix[k].addr.ip6, 128, &ipmx.addr.ip6))
+#endif
+                     ) {
 								if (!sender_fqdn.len)
 									if (!stralloc_copy(&sender_fqdn, &ssa.sa[j])) return SPF_NOMEM;
 
@@ -511,10 +568,25 @@ static int spf_ip(char *spec, char *mask)
 	if (ipmask < 0) return SPF_SYNTAX;
 	if (!ip_scan(spec, &net)) return SPF_SYNTAX;
 
-	if (matchip(&net, ipmask, &ip)) return SPF_OK;
+	if (matchip(&net, ipmask, &ipmx.addr.ip)) return SPF_OK;
 
 	return SPF_NONE;
 }
+
+#ifdef INET6
+static int spf_ip6(char *spec, char *mask)
+{
+	struct ip6_address net;
+	int ipmask = getip6mask(mask, 0);
+
+	if (ipmask < 0) return SPF_SYNTAX;
+	if (!ip6_scan(spec, &net)) return SPF_SYNTAX;
+
+	if (matchip6(&net, ipmask, &ipmx.addr.ip6)) return SPF_OK;
+
+	return SPF_NONE;
+}
+#endif
 
 static int spf_exists(char *spec, char *mask)
 {
@@ -552,7 +624,11 @@ static struct mechanisms {
 , { "mx",       spf_mx,     1,1,1,1,0        }
 , { "ptr",      spf_ptr,    1,0,1,1,0        }
 , { "ip4",      spf_ip,     1,1,0,0,0        }
+#ifdef INET6
+, { "ip6",      spf_ip6,    1,1,0,0,0        }
+#else
 , { "ip6",      0,          1,1,0,0,SPF_NONE }
+#endif
 , { "exists",   spf_exists, 1,0,1,0,0        }
 , { "extension",0,          1,1,0,0,SPF_EXT  }
 , { 0,          0,          1,1,0,0,SPF_EXT  }
@@ -852,7 +928,18 @@ int spfcheck()
 	if (!stralloc_0(&explanation)) return SPF_NOMEM;
 	recursion = 0;
 
-	if (!remoteip || !ip_scan(remoteip, &ip)) {
+   if (remoteip) {
+      if(ip_scan(remoteip, &ipmx.addr.ip))
+         ipmx.af = AF_INET;
+#ifdef INET6
+      else if(ip6_scan(remoteip, &ipmx.addr.ip6))
+         ipmx.af = AF_INET6;
+#endif
+      else
+         ipmx.af = AF_UNSPEC;
+   }
+
+   if(!remoteip || ipmx.af == AF_UNSPEC) {
 		hdr_unknown_msg("No IP address in conversation");
 		return SPF_UNKNOWN;
 	}
@@ -864,7 +951,13 @@ int spfcheck()
 	sender_fqdn.len = 0;
 	received = (char *) 0;
 
-	if ((ip.d[0] == 127 && ip.d[1] == 0 && ip.d[2] == 0 && ip.d[3] == 1) || ipme_is(&ip))
+	if (
+      (ipmx.af==AF_INET && ((ipmx.addr.ip.d[0] == 127 && ipmx.addr.ip.d[1] == 0 && ipmx.addr.ip.d[2] == 0 && ipmx.addr.ip.d[3] == 1) || ipme_is(&ipmx.addr.ip)))
+#ifdef INET6
+      ||
+      (ipmx.af==AF_INET6 && ipme_is6(&ipmx.addr.ip6))
+#endif
+   )
 		{ hdr_pass(); r = SPF_OK; }
 	else
 		r = spflookup(&domain);
